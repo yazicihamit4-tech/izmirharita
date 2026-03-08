@@ -73,6 +73,12 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-firestore")
 
+    // --- GÖRSELLER (COIL) ---
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
+    // --- KOTLIN COROUTINES PLAY SERVICES (Firebase await işlemleri için) ---
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
     // --- TEST VE DEBUG ---
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
