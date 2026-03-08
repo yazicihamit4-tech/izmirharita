@@ -21,6 +21,10 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.FirebaseApp
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.InputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,17 +64,54 @@ fun IzmirHaritaEkrani() {
     var mahalleMenuAcik by remember { mutableStateOf(false) }
     var sokakMenuAcik by remember { mutableStateOf(false) }
 
-    // --- ÖRNEK VERİ KAYNAĞI ---
-    val mahallelerMap = mapOf(
-        "Konak" to listOf("Alsancak", "Göztepe", "Güzelyalı", "Hatay"),
-        "Bornova" to listOf("Kazımdirik", "Özkanlar", "Mevlana", "Erzene"),
-        "Karşıyaka" to listOf("Bostanlı", "Mavişehir", "Bahçelievler", "Alaybey")
-    )
+    // --- JSON'dan Okunan Veriler ---
+    var mahallelerMap by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var sokaklarMap by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
 
-    val sokaklarMap = mapOf(
-        "Alsancak" to listOf("1475. Sokak", "Gül Sokak", "Kıbrıs Şehitleri"),
-        "Bostanlı" to listOf("2015. Sokak", "Şehitler Bulvarı", "Cemal Gürsel Cad.")
-    )
+    LaunchedEffect(Unit) {
+        try {
+            val (parsedMahallelerMap, parsedSokaklarMap) = withContext(Dispatchers.IO) {
+                val inputStream: InputStream = context.assets.open("izmir_rehberi.json")
+                val size = inputStream.available()
+                val buffer = ByteArray(size)
+                inputStream.read(buffer)
+                inputStream.close()
+                val jsonString = String(buffer, Charsets.UTF_8)
+                val jsonObject = JSONObject(jsonString)
+
+                val tempMahallelerMap = mutableMapOf<String, List<String>>()
+                if (jsonObject.has("mahalleler")) {
+                    val mahallelerObj = jsonObject.getJSONObject("mahalleler")
+                    mahallelerObj.keys().forEach { ilce ->
+                        val mahallelerArray = mahallelerObj.getJSONArray(ilce)
+                        val mahallelerList = mutableListOf<String>()
+                        for (i in 0 until mahallelerArray.length()) {
+                            mahallelerList.add(mahallelerArray.getString(i))
+                        }
+                        tempMahallelerMap[ilce] = mahallelerList
+                    }
+                }
+
+                val tempSokaklarMap = mutableMapOf<String, List<String>>()
+                if (jsonObject.has("sokaklar")) {
+                    val sokaklarObj = jsonObject.getJSONObject("sokaklar")
+                    sokaklarObj.keys().forEach { mahalle ->
+                        val sokaklarArray = sokaklarObj.getJSONArray(mahalle)
+                        val sokaklarList = mutableListOf<String>()
+                        for (i in 0 until sokaklarArray.length()) {
+                            sokaklarList.add(sokaklarArray.getString(i))
+                        }
+                        tempSokaklarMap[mahalle] = sokaklarList
+                    }
+                }
+                Pair(tempMahallelerMap, tempSokaklarMap)
+            }
+            mahallelerMap = parsedMahallelerMap
+            sokaklarMap = parsedSokaklarMap
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     val guncelMahalleler = mahallelerMap[secilenIlce] ?: listOf("Önce İlçe Seçin")
     val guncelSokaklar = sokaklarMap[secilenMahalle] ?: listOf("Önce Mahalle Seçin")
