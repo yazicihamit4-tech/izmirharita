@@ -101,6 +101,11 @@ fun IzmirHaritaEkrani() {
     // --- Haritadaki Sorunlar ---
     var sorunlarListesi by remember { mutableStateOf<List<SorunModel>>(emptyList()) }
 
+    val konakMerkez = LatLng(38.4192, 27.1287)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(konakMerkez, 12f)
+    }
+
     // --- SORUN KAYDETME İŞLEVİ (FIREBASE) ---
     fun sorunKaydet() {
         if (secilenIlce == "İlçe Seçin" || secilenMahalle == "Mahalle Seçin" || secilenSokak == "Sokak Seçin" || yorum.isBlank()) {
@@ -247,7 +252,7 @@ fun IzmirHaritaEkrani() {
                         tempSokaklarMap[mahalle] = sokaklarList
                     }
                 }
-                Pair(tempMahallelerMap, tempSokaklarMap)
+                Pair<Map<String, List<String>>, Map<String, List<String>>>(tempMahallelerMap, tempSokaklarMap)
             }
             mahallelerMap = parsedMahallelerMap
             sokaklarMap = parsedSokaklarMap
@@ -263,11 +268,6 @@ fun IzmirHaritaEkrani() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.entries.all { it.value }) showSheet = true
-    }
-
-    val konakMerkez = LatLng(38.4192, 27.1287)
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(konakMerkez, 12f)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
