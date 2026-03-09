@@ -35,6 +35,7 @@ import org.json.JSONObject
 import java.io.InputStream
 import java.util.Locale
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.LatLngBounds
 import android.provider.Settings
 import com.google.android.gms.location.LocationServices
 import android.content.pm.PackageManager
@@ -132,9 +133,15 @@ fun IzmirHaritaEkrani() {
     // --- Cihaz ID (Benzersiz Profil İçin) ---
     val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "BilinmeyenKullanici"
 
-    val konakMerkez = LatLng(38.4192, 27.1287)
+    // --- Karşıyaka Sınırları ve Harita Ayarları ---
+    val karsiyakaMerkez = LatLng(38.4550, 27.1140)
+    val karsiyakaBounds = LatLngBounds(
+        LatLng(38.4410, 26.9600), // Güneybatı (SW)
+        LatLng(38.5600, 27.2000)  // Kuzeydoğu (NE)
+    )
+
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(konakMerkez, 12f)
+        position = CameraPosition.fromLatLngZoom(karsiyakaMerkez, 14f)
     }
 
     // --- SORUN KAYDETME İŞLEVİ (FIREBASE) ---
@@ -148,13 +155,19 @@ fun IzmirHaritaEkrani() {
             try {
                 var photoUrl = ""
                 // 1. Eğer fotoğraf seçildiyse Firebase Storage'a yükle
-                secilenFotografUri?.let { uri ->
+                if (secilenFotografUri != null) {
+                    val uri = secilenFotografUri!!
                     val storageRef = FirebaseStorage.getInstance().reference
                     val photoRef = storageRef.child("sorunlar/${System.currentTimeMillis()}.jpg")
-                    // uri.lastPathSegment yerine timestamp verildi
-                    photoRef.putFile(uri).await()
-                    val downloadUrl = photoRef.downloadUrl.await()
-                    photoUrl = downloadUrl.toString()
+                    try {
+                        photoRef.putFile(uri).await()
+                        val downloadUrl = photoRef.downloadUrl.await()
+                        photoUrl = downloadUrl.toString()
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Fotoğraf yüklenemedi: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
 
                 // 2. Firestore'a veriyi kaydet (Formda bulunan anlık koordinatlar ve adres ile)
@@ -330,6 +343,10 @@ fun IzmirHaritaEkrani() {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
+            properties = MapProperties(
+                latLngBoundsForCameraTarget = karsiyakaBounds,
+                minZoomPreference = 12f
+            ),
             onMapLongClick = { latLng ->
                 anlikLat = latLng.latitude
                 anlikLng = latLng.longitude
@@ -481,9 +498,9 @@ fun IzmirHaritaEkrani() {
                 confirmButton = {
                     Button(onClick = {
                         // "yazhamit" SHA-256 Hash'i
-                        val beklenenKullaniciHash = "3d69b917bce736cc4d79dfddff613b5e4c0d014eb25e83ec58eb3606f3b0c8db"
+                        val beklenenKullaniciHash = "5596c93f77709e9c12fc4f8633c712221002652f66241e675c1046475497f426"
                         // "715859" SHA-256 Hash'i
-                        val beklenenSifreHash = "7bcbb2dc4edda982ee35b719ad61eb10a34ba8dc41cc3ab67b61da287a9116e0"
+                        val beklenenSifreHash = "6ad04b02e45051fc74fec6748bc60bf26fb30fb7a202d6719ebd138287d2def8"
 
                         fun String.toSHA256(): String {
                             val bytes = MessageDigest.getInstance("SHA-256").digest(this.toByteArray())
@@ -560,15 +577,23 @@ fun IzmirHaritaEkrani() {
                         }
                     }
 
-                    secilenFotografUri?.let { uri ->
-                        AsyncImage(
-                            model = uri,
-                            contentDescription = "Seçilen Fotoğraf",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp)
-                                .padding(vertical = 8.dp)
-                        )
+                    if (secilenFotografUri != null) {
+                        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            AsyncImage(
+                                model = secilenFotografUri,
+                                contentDescription = "Seçilen Fotoğraf",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .padding(vertical = 8.dp)
+                            )
+                            TextButton(onClick = {
+                                secilenFotografUri = null
+                                kameraIcinUri = null
+                            }) {
+                                Text("Fotoğrafı Sil", color = Color.Red)
+                            }
+                        }
                     }
 
                     Button(
