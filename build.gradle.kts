@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.maps.compose)
     implementation(libs.play.services.maps)
     implementation(libs.play.services.location)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // --- FIREBASE ---
     implementation(platform("com.google.firebase:firebase-bom:34.10.0"))

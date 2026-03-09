@@ -35,9 +35,15 @@ import org.json.JSONObject
 import java.io.InputStream
 import java.util.Locale
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import android.provider.Settings
+import com.google.android.gms.location.LocationServices
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.util.Log
 
 data class SorunModel(
     val id: String,
+    val kullaniciId: String,
     val lat: Double,
     val lng: Double,
     val aciklama: String,
@@ -89,17 +95,22 @@ fun IzmirHaritaEkrani() {
         onResult = { uri -> secilenFotografUri = uri }
     )
 
-    // Menü Açık/Kapalı Kontrolleri
-    var ilceMenuAcik by remember { mutableStateOf(false) }
-    var mahalleMenuAcik by remember { mutableStateOf(false) }
-    var sokakMenuAcik by remember { mutableStateOf(false) }
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
-    // --- JSON'dan Okunan Veriler ---
-    var mahallelerMap by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
-    var sokaklarMap by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    // --- O Anki Konum ve Adres (Form için) ---
+    var bulunanAdres by remember { mutableStateOf("Adres tespit ediliyor...") }
+    var anlikLat by remember { mutableStateOf(0.0) }
+    var anlikLng by remember { mutableStateOf(0.0) }
+    var formAciliyor by remember { mutableStateOf(false) }
+
+    // --- Profil Ekranı ---
+    var profilAcik by remember { mutableStateOf(false) }
 
     // --- Haritadaki Sorunlar ---
     var sorunlarListesi by remember { mutableStateOf<List<SorunModel>>(emptyList()) }
+
+    // --- Cihaz ID (Benzersiz Profil İçin) ---
+    val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "BilinmeyenKullanici"
 
     val konakMerkez = LatLng(38.4192, 27.1287)
     val cameraPositionState = rememberCameraPositionState {
@@ -108,14 +119,10 @@ fun IzmirHaritaEkrani() {
 
     // --- SORUN KAYDETME İŞLEVİ (FIREBASE) ---
     fun sorunKaydet() {
-        if (secilenIlce == "İlçe Seçin" || secilenMahalle == "Mahalle Seçin" || secilenSokak == "Sokak Seçin" || yorum.isBlank()) {
-            Toast.makeText(context, "Lütfen tüm alanları doldurun.", Toast.LENGTH_SHORT).show()
+        if (yorum.isBlank() || anlikLat == 0.0) {
+            Toast.makeText(context, "Lütfen açıklama girin ve konumun bulunmasını bekleyin.", Toast.LENGTH_SHORT).show()
             return
         }
-
-        // Aslında burada kullanıcının konumu alınabilir veya adres Geocoder ile çevrilip LatLng elde edilebilir
-        // Biz adres stringi olarak ekliyoruz
-        val adres = "İzmir, $secilenIlce, $secilenMahalle, $secilenSokak"
 
         coroutineScope.launch(Dispatchers.IO) {
             try {
@@ -130,26 +137,18 @@ fun IzmirHaritaEkrani() {
                     photoUrl = downloadUrl.toString()
                 }
 
-                // 2. Firestore'a veriyi kaydet
-                val geocoder = Geocoder(context, Locale.getDefault())
-                val addressList = geocoder.getFromLocationName(adres, 1)
-                var lat = 38.4192
-                var lng = 27.1287
-                if (!addressList.isNullOrEmpty()) {
-                    lat = addressList[0].latitude
-                    lng = addressList[0].longitude
-                }
-
+                // 2. Firestore'a veriyi kaydet (Formda bulunan anlık koordinatlar ve adres ile)
                 val sorunVerisi = hashMapOf(
-                    "adres" to adres,
-                    "ilce" to secilenIlce,
-                    "mahalle" to secilenMahalle,
-                    "sokak" to secilenSokak,
+                    "kullaniciId" to androidId,
+                    "adres" to bulunanAdres,
+                    "ilce" to "Karşıyaka", // Sabit Karşıyaka (İsteğe bağlı silebiliriz)
+                    "mahalle" to "",
+                    "sokak" to "",
                     "aciklama" to yorum,
                     "fotografUrl" to photoUrl,
                     "cozuldu" to false,
-                    "lat" to lat,
-                    "lng" to lng,
+                    "lat" to anlikLat,
+                    "lng" to anlikLng,
                     "timestamp" to System.currentTimeMillis()
                 )
 
@@ -172,22 +171,46 @@ fun IzmirHaritaEkrani() {
         }
     }
 
-    // Kamera Yakınlaşma İşlevi
-    fun yaklas(adres: String) {
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
-                val geocoder = Geocoder(context, Locale.getDefault())
-                val addressList = geocoder.getFromLocationName(adres, 1)
-                if (!addressList.isNullOrEmpty()) {
-                    val location = addressList[0]
+    // Cihazın anlık konumunu bulma ve kamerayı yakınlaştırma işlevi
+    fun anlikKonumBulVeFormAc() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            formAciliyor = true
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
                     val latLng = LatLng(location.latitude, location.longitude)
-                    withContext(Dispatchers.Main) {
-                        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
+                    anlikLat = location.latitude
+                    anlikLng = location.longitude
+
+                    // Kamerayı o anki konuma zoom yap
+                    coroutineScope.launch {
+                        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 18f))
                     }
+
+                    // Adresi bul
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val geocoder = Geocoder(context, Locale.getDefault())
+                            val addressList = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                            if (!addressList.isNullOrEmpty()) {
+                                bulunanAdres = addressList[0].getAddressLine(0) ?: "Bilinmeyen Adres"
+                            } else {
+                                bulunanAdres = "Adres bulunamadı (Enlem: ${location.latitude}, Boylam: ${location.longitude})"
+                            }
+                        } catch (e: Exception) {
+                            bulunanAdres = "Adres çözülemedi."
+                        }
+                    }
+                } else {
+                    Toast.makeText(context, "Konum alınamadı, GPS'in açık olduğundan emin olun.", Toast.LENGTH_SHORT).show()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+                formAciliyor = false
+                showSheet = true // Formu aç
+            }.addOnFailureListener {
+                Toast.makeText(context, "Konum hatası: ${it.message}", Toast.LENGTH_SHORT).show()
+                formAciliyor = false
             }
+        } else {
+            Toast.makeText(context, "Konum izni reddedildi.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -205,6 +228,7 @@ fun IzmirHaritaEkrani() {
                         liste.add(
                             SorunModel(
                                 id = doc.id,
+                                kullaniciId = doc.getString("kullaniciId") ?: "",
                                 lat = doc.getDouble("lat") ?: 0.0,
                                 lng = doc.getDouble("lng") ?: 0.0,
                                 aciklama = doc.getString("aciklama") ?: "",
@@ -218,56 +242,17 @@ fun IzmirHaritaEkrani() {
                 }
             }
 
-            val (parsedMahallelerMap, parsedSokaklarMap) = withContext(Dispatchers.IO) {
-                val inputStream: InputStream = context.assets.open("izmir_rehberi.json")
-                val size = inputStream.available()
-                val buffer = ByteArray(size)
-                inputStream.read(buffer)
-                inputStream.close()
-                val jsonString = String(buffer, Charsets.UTF_8)
-                val jsonObject = JSONObject(jsonString)
-
-                val tempMahallelerMap = mutableMapOf<String, List<String>>()
-                if (jsonObject.has("mahalleler")) {
-                    val mahallelerObj = jsonObject.getJSONObject("mahalleler")
-                    mahallelerObj.keys().forEach { ilce ->
-                        val mahallelerArray = mahallelerObj.getJSONArray(ilce)
-                        val mahallelerList = mutableListOf<String>()
-                        for (i in 0 until mahallelerArray.length()) {
-                            mahallelerList.add(mahallelerArray.getString(i))
-                        }
-                        tempMahallelerMap[ilce] = mahallelerList
-                    }
-                }
-
-                val tempSokaklarMap = mutableMapOf<String, List<String>>()
-                if (jsonObject.has("sokaklar")) {
-                    val sokaklarObj = jsonObject.getJSONObject("sokaklar")
-                    sokaklarObj.keys().forEach { mahalle ->
-                        val sokaklarArray = sokaklarObj.getJSONArray(mahalle)
-                        val sokaklarList = mutableListOf<String>()
-                        for (i in 0 until sokaklarArray.length()) {
-                            sokaklarList.add(sokaklarArray.getString(i))
-                        }
-                        tempSokaklarMap[mahalle] = sokaklarList
-                    }
-                }
-                Pair<Map<String, List<String>>, Map<String, List<String>>>(tempMahallelerMap, tempSokaklarMap)
-            }
-            mahallelerMap = parsedMahallelerMap
-            sokaklarMap = parsedSokaklarMap
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    val guncelMahalleler = mahallelerMap[secilenIlce] ?: listOf("Önce İlçe Seçin")
-    val guncelSokaklar = sokaklarMap[secilenMahalle] ?: listOf("Önce Mahalle Seçin")
-
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.entries.all { it.value }) showSheet = true
+        if (permissions.entries.all { it.value }) {
+            anlikKonumBulVeFormAc()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -294,12 +279,63 @@ fun IzmirHaritaEkrani() {
 
         Button(
             onClick = {
-                permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.CAMERA))
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    anlikKonumBulVeFormAc()
+                } else {
+                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.CAMERA))
+                }
             },
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).height(56.dp).fillMaxWidth(0.6f),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0055))
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0055)),
+            enabled = !formAciliyor
         ) {
-            Text("SORUN BİLDİR")
+            if (formAciliyor) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+            } else {
+                Text("SORUN BİLDİR")
+            }
+        }
+
+        Button(
+            onClick = { profilAcik = true },
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+        ) {
+            Text("Profilim")
+        }
+
+        if (profilAcik) {
+            val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == androidId }
+            AlertDialog(
+                onDismissRequest = { profilAcik = false },
+                title = { Text("Bildirdiğim Sorunlar") },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        if (benimSorunlarim.isEmpty()) {
+                            Text("Henüz bir sorun bildirmediniz.")
+                        } else {
+                            benimSorunlarim.forEach { sorun ->
+                                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        Text(text = "Adres: ${sorun.adres}", style = MaterialTheme.typography.bodySmall)
+                                        Text(text = "Açıklama: ${sorun.aciklama}", style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            text = if (sorun.cozuldu) "✅ Çözüldü" else "❌ Bekliyor",
+                                            color = if (sorun.cozuldu) Color(0xFF4CAF50) else Color.Red,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { profilAcik = false }) {
+                        Text("Kapat")
+                    }
+                }
+            )
         }
 
         if (showSheet) {
@@ -308,70 +344,20 @@ fun IzmirHaritaEkrani() {
                     modifier = Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Konum Bilgileri", style = MaterialTheme.typography.titleLarge)
+                    Text("Sorun Bildir", style = MaterialTheme.typography.titleLarge)
 
-                    // 1. İLÇE SEÇİMİ
-                    ExposedDropdownMenuBox(expanded = ilceMenuAcik, onExpandedChange = { ilceMenuAcik = !ilceMenuAcik }) {
-                        OutlinedTextField(
-                            value = secilenIlce, onValueChange = {}, readOnly = true, label = { Text("İlçe") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ilceMenuAcik) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(expanded = ilceMenuAcik, onDismissRequest = { ilceMenuAcik = false }) {
-                            mahallelerMap.keys.forEach { ilce ->
-                                DropdownMenuItem(text = { Text(ilce) }, onClick = {
-                                    secilenIlce = ilce
-                                    secilenMahalle = "Mahalle Seçin"
-                                    secilenSokak = "Sokak Seçin"
-                                    ilceMenuAcik = false
-                                    yaklas("İzmir, $ilce")
-                                })
-                            }
-                        }
-                    }
-
-                    // 2. MAHALLE SEÇİMİ
-                    ExposedDropdownMenuBox(expanded = mahalleMenuAcik, onExpandedChange = { mahalleMenuAcik = !mahalleMenuAcik }) {
-                        OutlinedTextField(
-                            value = secilenMahalle, onValueChange = {}, readOnly = true, label = { Text("Mahalle") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = mahalleMenuAcik) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            enabled = secilenIlce != "İlçe Seçin"
-                        )
-                        ExposedDropdownMenu(expanded = mahalleMenuAcik, onDismissRequest = { mahalleMenuAcik = false }) {
-                            guncelMahalleler.forEach { mahalle ->
-                                DropdownMenuItem(text = { Text(mahalle) }, onClick = {
-                                    secilenMahalle = mahalle
-                                    secilenSokak = "Sokak Seçin"
-                                    mahalleMenuAcik = false
-                                    yaklas("İzmir, $secilenIlce, $mahalle")
-                                })
-                            }
-                        }
-                    }
-
-                    // 3. SOKAK SEÇİMİ
-                    ExposedDropdownMenuBox(expanded = sokakMenuAcik, onExpandedChange = { sokakMenuAcik = !sokakMenuAcik }) {
-                        OutlinedTextField(
-                            value = secilenSokak, onValueChange = {}, readOnly = true, label = { Text("Sokak") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = sokakMenuAcik) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            enabled = secilenMahalle != "Mahalle Seçin"
-                        )
-                        ExposedDropdownMenu(expanded = sokakMenuAcik, onDismissRequest = { sokakMenuAcik = false }) {
-                            guncelSokaklar.forEach { sokak ->
-                                DropdownMenuItem(text = { Text(sokak) }, onClick = {
-                                    secilenSokak = sokak
-                                    sokakMenuAcik = false
-                                    yaklas("İzmir, $secilenIlce, $secilenMahalle, $sokak")
-                                })
-                            }
-                        }
-                    }
+                    // Otomatik Bulunan Konum
+                    OutlinedTextField(
+                        value = bulunanAdres,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Bulunan Konum") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     OutlinedTextField(
                         value = yorum, onValueChange = { yorum = it },
-                        label = { Text("Sorun Açıklaması") },
+                        label = { Text("Sorun Açıklaması (Örn: Çukur var)") },
                         modifier = Modifier.fillMaxWidth(), minLines = 3
                     )
 

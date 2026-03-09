@@ -1,17 +1,5 @@
 {
   "mahalleler": {
-    "Konak": [
-      "Alsancak",
-      "Göztepe",
-      "Güzelyalı",
-      "Hatay"
-    ],
-    "Bornova": [
-      "Kazımdirik",
-      "Özkanlar",
-      "Mevlana",
-      "Erzene"
-    ],
     "Karşıyaka": [
       "Aksoy",
       "Alaybey",
@@ -43,14 +31,6 @@
     ]
   },
   "sokaklar": {
-    "Alsancak": ["1475. Sokak", "Gül Sokak", "Kıbrıs Şehitleri"],
-    "Göztepe": ["Mithatpaşa Cd.", "Gürsel Aksel Blv."],
-    "Güzelyalı": ["Mithatpaşa Cd.", "Poligon Deresi Sok."],
-    "Hatay": ["İnönü Cd.", "Poligon Deresi Sok."],
-    "Kazımdirik": ["Ankara Cd.", "Süvari Cd."],
-    "Özkanlar": ["Mustafa Kemal Cd.", "Ozan Abay Cd."],
-    "Mevlana": ["Mevlana Cd."],
-    "Erzene": ["Fevzi Çakmak Cd.", "Ege Üniversitesi Kampüsü"],
     "Aksoy": ["1735. Sokak", "1738. Sokak", "Girne Bulvarı", "1741. Sokak", "1742. Sokak"],
     "Alaybey": ["1671 Sokak", "1675 Sokak", "Tersane Cafe Arkası Sokak", "Cemal Gürsel Caddesi"],
     "Atakent": ["Caher Dudayev Bulvarı", "2038. Sokak", "Hasan Ali Yücel Bulvarı", "2040. Sokak"],
