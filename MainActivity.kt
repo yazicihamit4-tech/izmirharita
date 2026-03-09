@@ -40,6 +40,12 @@ import com.google.android.gms.location.LocationServices
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import android.util.Log
+import androidx.core.content.FileProvider
+import java.io.File
+import java.security.MessageDigest
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 
 data class SorunModel(
     val id: String,
@@ -49,7 +55,7 @@ data class SorunModel(
     val aciklama: String,
     val adres: String,
     val fotografUrl: String,
-    val cozuldu: Boolean
+    val durum: Int // 0: Bekliyor, 1: İletildi, 2: Çözüldü
 )
 
 class MainActivity : ComponentActivity() {
@@ -85,14 +91,24 @@ fun IzmirHaritaEkrani() {
     var secilenSokak by remember { mutableStateOf("Sokak Seçin") }
     var yorum by remember { mutableStateOf("") }
 
-    // Fotoğraf Seçimi
+    // Fotoğraf Seçimi (Galeri ve Kamera)
     var secilenFotografUri by remember { mutableStateOf<Uri?>(null) }
+    var kameraIcinUri by remember { mutableStateOf<Uri?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
-        onResult = { uri -> secilenFotografUri = uri }
+        onResult = { uri -> if (uri != null) secilenFotografUri = uri }
+    )
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success ->
+            if (success) {
+                secilenFotografUri = kameraIcinUri
+            }
+        }
     )
 
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
@@ -105,6 +121,10 @@ fun IzmirHaritaEkrani() {
 
     // --- Profil Ekranı ---
     var profilAcik by remember { mutableStateOf(false) }
+
+    // --- Admin Ekranı ---
+    var adminGirisEkraniAcik by remember { mutableStateOf(false) }
+    var adminGirisiYapildi by remember { mutableStateOf(false) }
 
     // --- Haritadaki Sorunlar ---
     var sorunlarListesi by remember { mutableStateOf<List<SorunModel>>(emptyList()) }
@@ -146,7 +166,7 @@ fun IzmirHaritaEkrani() {
                     "sokak" to "",
                     "aciklama" to yorum,
                     "fotografUrl" to photoUrl,
-                    "cozuldu" to false,
+                    "durum" to 0,
                     "lat" to anlikLat,
                     "lng" to anlikLng,
                     "timestamp" to System.currentTimeMillis()
@@ -234,7 +254,7 @@ fun IzmirHaritaEkrani() {
                                 aciklama = doc.getString("aciklama") ?: "",
                                 adres = doc.getString("adres") ?: "",
                                 fotografUrl = doc.getString("fotografUrl") ?: "",
-                                cozuldu = doc.getBoolean("cozuldu") ?: false
+                                durum = doc.getLong("durum")?.toInt() ?: (if (doc.getBoolean("cozuldu") == true) 2 else 0)
                             )
                         )
                     }
@@ -255,18 +275,97 @@ fun IzmirHaritaEkrani() {
         }
     }
 
+    // --- Admin Durum Güncelleme ---
+    fun durumuGuncelle(id: String, yeniDurum: Int) {
+        val db = FirebaseFirestore.getInstance()
+        db.collection("sorunlar").document(id).update("durum", yeniDurum, "cozuldu", yeniDurum == 2)
+            .addOnSuccessListener { Toast.makeText(context, "Durum güncellendi", Toast.LENGTH_SHORT).show() }
+            .addOnFailureListener { e -> Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show() }
+    }
+
+    if (adminGirisiYapildi) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Admin Paneli", style = MaterialTheme.typography.headlineMedium)
+                Button(onClick = { adminGirisiYapildi = false }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
+                    Text("Çıkış")
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(sorunlarListesi) { sorun ->
+                    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            if (sorun.fotografUrl.isNotEmpty()) {
+                                AsyncImage(
+                                    model = sorun.fotografUrl,
+                                    contentDescription = "Sorun Fotoğrafı",
+                                    modifier = Modifier.fillMaxWidth().height(200.dp).padding(bottom = 8.dp)
+                                )
+                            }
+                            Text("Adres: ${sorun.adres}", style = MaterialTheme.typography.titleMedium)
+                            Text("Açıklama: ${sorun.aciklama}", style = MaterialTheme.typography.bodyLarge)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Durum Güncelle:", style = MaterialTheme.typography.labelLarge)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { durumuGuncelle(sorun.id, 0) }, enabled = sorun.durum != 0) {
+                                    Text("Bekliyor")
+                                }
+                                OutlinedButton(onClick = { durumuGuncelle(sorun.id, 1) }, enabled = sorun.durum != 1) {
+                                    Text("İletildi")
+                                }
+                                Button(onClick = { durumuGuncelle(sorun.id, 2) }, enabled = sorun.durum != 2, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))) {
+                                    Text("Çözüldü")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return // Ana ekranı gösterme, sadece admin panelini göster
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState
+            cameraPositionState = cameraPositionState,
+            onMapLongClick = { latLng ->
+                anlikLat = latLng.latitude
+                anlikLng = latLng.longitude
+                formAciliyor = true
+                coroutineScope.launch {
+                    cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(latLng, 18f))
+                }
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        val geocoder = Geocoder(context, Locale.getDefault())
+                        val addressList = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
+                        if (!addressList.isNullOrEmpty()) {
+                            bulunanAdres = addressList[0].getAddressLine(0) ?: "Bilinmeyen Adres"
+                        } else {
+                            bulunanAdres = "Adres bulunamadı (Enlem: ${latLng.latitude}, Boylam: ${latLng.longitude})"
+                        }
+                    } catch (e: Exception) {
+                        bulunanAdres = "Adres çözülemedi."
+                    }
+                    withContext(Dispatchers.Main) {
+                        formAciliyor = false
+                        showSheet = true
+                    }
+                }
+            }
         ) {
             // Haritada Sorunları Göster
             sorunlarListesi.forEach { sorun ->
                 val konum = LatLng(sorun.lat, sorun.lng)
 
-                // Karakter/Renk: Çözüldü ise Yeşil (başarı), Çözülmedi ise Kırmızı (sorun)
-                val iconColor = if (sorun.cozuldu) BitmapDescriptorFactory.HUE_GREEN else BitmapDescriptorFactory.HUE_RED
-                val durumYazisi = if (sorun.cozuldu) "✅ Çözüldü" else "❌ Bekliyor"
+                // Karakter/Renk: Bekliyor (Kırmızı), İletildi (Sarı), Çözüldü (Yeşil)
+                val (iconColor, durumYazisi) = when (sorun.durum) {
+                    2 -> Pair(BitmapDescriptorFactory.HUE_GREEN, "✅ Çözüldü")
+                    1 -> Pair(BitmapDescriptorFactory.HUE_ORANGE, "🟠 İletildi")
+                    else -> Pair(BitmapDescriptorFactory.HUE_RED, "🔴 Bekliyor")
+                }
 
                 Marker(
                     state = MarkerState(position = konum),
@@ -296,12 +395,20 @@ fun IzmirHaritaEkrani() {
             }
         }
 
-        Button(
-            onClick = { profilAcik = true },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
-        ) {
-            Text("Profilim")
+        Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 16.dp)) {
+            Button(
+                onClick = { profilAcik = true },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+            ) {
+                Text("Profilim")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { adminGirisEkraniAcik = true },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+            ) {
+                Text("Admin")
+            }
         }
 
         if (profilAcik) {
@@ -319,9 +426,14 @@ fun IzmirHaritaEkrani() {
                                     Column(modifier = Modifier.padding(8.dp)) {
                                         Text(text = "Adres: ${sorun.adres}", style = MaterialTheme.typography.bodySmall)
                                         Text(text = "Açıklama: ${sorun.aciklama}", style = MaterialTheme.typography.bodyMedium)
+                                        val (durumYazisi, durumRengi) = when (sorun.durum) {
+                                            2 -> Pair("✅ Çözüldü", Color(0xFF4CAF50))
+                                            1 -> Pair("🟠 İlgili Birime İletildi", Color(0xFFFF9800))
+                                            else -> Pair("🔴 Bekliyor", Color.Red)
+                                        }
                                         Text(
-                                            text = if (sorun.cozuldu) "✅ Çözüldü" else "❌ Bekliyor",
-                                            color = if (sorun.cozuldu) Color(0xFF4CAF50) else Color.Red,
+                                            text = durumYazisi,
+                                            color = durumRengi,
                                             style = MaterialTheme.typography.bodyMedium
                                         )
                                     }
@@ -334,6 +446,62 @@ fun IzmirHaritaEkrani() {
                     TextButton(onClick = { profilAcik = false }) {
                         Text("Kapat")
                     }
+                }
+            )
+        }
+
+        if (adminGirisEkraniAcik) {
+            var adminKullanici by remember { mutableStateOf("") }
+            var adminSifre by remember { mutableStateOf("") }
+            var hataMesaji by remember { mutableStateOf("") }
+
+            AlertDialog(
+                onDismissRequest = { adminGirisEkraniAcik = false },
+                title = { Text("Admin Girişi") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = adminKullanici,
+                            onValueChange = { adminKullanici = it },
+                            label = { Text("Kullanıcı Adı") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = adminSifre,
+                            onValueChange = { adminSifre = it },
+                            label = { Text("Şifre") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (hataMesaji.isNotEmpty()) {
+                            Text(text = hataMesaji, color = Color.Red, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        // "yazhamit" SHA-256 Hash'i
+                        val beklenenKullaniciHash = "3d69b917bce736cc4d79dfddff613b5e4c0d014eb25e83ec58eb3606f3b0c8db"
+                        // "715859" SHA-256 Hash'i
+                        val beklenenSifreHash = "7bcbb2dc4edda982ee35b719ad61eb10a34ba8dc41cc3ab67b61da287a9116e0"
+
+                        fun String.toSHA256(): String {
+                            val bytes = MessageDigest.getInstance("SHA-256").digest(this.toByteArray())
+                            return bytes.joinToString("") { "%02x".format(it) }
+                        }
+
+                        if (adminKullanici.toSHA256() == beklenenKullaniciHash && adminSifre.toSHA256() == beklenenSifreHash) {
+                            adminGirisiYapildi = true
+                            adminGirisEkraniAcik = false
+                        } else {
+                            hataMesaji = "Hatalı kullanıcı adı veya şifre"
+                        }
+                    }) {
+                        Text("Giriş")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { adminGirisEkraniAcik = false }) { Text("İptal") }
                 }
             )
         }
@@ -361,18 +529,35 @@ fun IzmirHaritaEkrani() {
                         modifier = Modifier.fillMaxWidth(), minLines = 3
                     )
 
-                    Button(
-                        onClick = {
-                            photoPickerLauncher.launch(
-                                androidx.activity.result.PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                val resimDosyasi = File(context.cacheDir, "images")
+                                resimDosyasi.mkdirs()
+                                val dosya = File(resimDosyasi, "kamera_${System.currentTimeMillis()}.jpg")
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", dosya)
+                                kameraIcinUri = uri
+                                cameraLauncher.launch(uri)
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                        ) {
+                            Text("Kamerayla Çek")
+                        }
+
+                        Button(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly
+                                    )
                                 )
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
-                    ) {
-                        Text("Fotoğraf Ekle (Sadece 1)")
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+                        ) {
+                            Text("Galeriden Seç")
+                        }
                     }
 
                     secilenFotografUri?.let { uri ->
