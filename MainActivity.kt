@@ -24,6 +24,7 @@ import com.google.android.gms.maps.model.CameraPosition
 import coil.compose.AsyncImage
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.maps.android.compose.*
@@ -56,7 +57,8 @@ data class SorunModel(
     val aciklama: String,
     val adres: String,
     val fotografUrl: String,
-    val durum: Int // 0: Bekliyor, 1: İletildi, 2: Çözüldü
+    val durum: Int, // 0: Bekliyor, 1: İletildi, 2: Çözüldü
+    val silindi: Boolean
 )
 
 class MainActivity : ComponentActivity() {
@@ -65,6 +67,17 @@ class MainActivity : ComponentActivity() {
 
         try {
             FirebaseApp.initializeApp(this)
+            val auth = FirebaseAuth.getInstance()
+            if (auth.currentUser == null) {
+                auth.signInAnonymously()
+                    .addOnCompleteListener(this) { task ->
+                        if (!task.isSuccessful) {
+                            Log.w("FirebaseAuth", "Anonim giriş başarısız", task.exception)
+                        } else {
+                            Log.d("FirebaseAuth", "Anonim giriş başarılı: ${auth.currentUser?.uid}")
+                        }
+                    }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -125,7 +138,10 @@ fun IzmirHaritaEkrani() {
 
     // --- Admin Ekranı ---
     var adminGirisEkraniAcik by remember { mutableStateOf(false) }
-    var adminGirisiYapildi by remember { mutableStateOf(false) }
+    var adminGirisiYapildi by remember {
+        val prefs = context.getSharedPreferences("AdminPrefs", android.content.Context.MODE_PRIVATE)
+        mutableStateOf(prefs.getBoolean("admin_loggedin", false))
+    }
 
     // --- Haritadaki Sorunlar ---
     var sorunlarListesi by remember { mutableStateOf<List<SorunModel>>(emptyList()) }
@@ -136,12 +152,12 @@ fun IzmirHaritaEkrani() {
     // --- Karşıyaka Sınırları ve Harita Ayarları ---
     val karsiyakaMerkez = LatLng(38.4550, 27.1140)
     val karsiyakaBounds = LatLngBounds(
-        LatLng(38.4410, 26.9600), // Güneybatı (SW)
-        LatLng(38.5600, 27.2000)  // Kuzeydoğu (NE)
+        LatLng(38.4350, 27.0800), // Güneybatı (SW) (Daha dar Karşıyaka limitleri)
+        LatLng(38.4750, 27.1500)  // Kuzeydoğu (NE)
     )
 
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(karsiyakaMerkez, 14f)
+        position = CameraPosition.fromLatLngZoom(karsiyakaMerkez, 15f)
     }
 
     // --- SORUN KAYDETME İŞLEVİ (FIREBASE) ---
@@ -180,6 +196,7 @@ fun IzmirHaritaEkrani() {
                     "aciklama" to yorum,
                     "fotografUrl" to photoUrl,
                     "durum" to 0,
+                    "silindi" to false,
                     "lat" to anlikLat,
                     "lng" to anlikLng,
                     "timestamp" to System.currentTimeMillis()
@@ -267,7 +284,8 @@ fun IzmirHaritaEkrani() {
                                 aciklama = doc.getString("aciklama") ?: "",
                                 adres = doc.getString("adres") ?: "",
                                 fotografUrl = doc.getString("fotografUrl") ?: "",
-                                durum = doc.getLong("durum")?.toInt() ?: (if (doc.getBoolean("cozuldu") == true) 2 else 0)
+                                durum = doc.getLong("durum")?.toInt() ?: (if (doc.getBoolean("cozuldu") == true) 2 else 0),
+                                silindi = doc.getBoolean("silindi") ?: false
                             )
                         )
                     }
@@ -296,17 +314,54 @@ fun IzmirHaritaEkrani() {
             .addOnFailureListener { e -> Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show() }
     }
 
+    // --- Admin Sorun Silme (Soft Delete) ---
+    fun sorunuSil(id: String) {
+        val db = FirebaseFirestore.getInstance()
+        db.collection("sorunlar").document(id).update("silindi", true)
+            .addOnSuccessListener { Toast.makeText(context, "Sorun silindi", Toast.LENGTH_SHORT).show() }
+            .addOnFailureListener { e -> Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show() }
+    }
+
     if (adminGirisiYapildi) {
+        val istatistikToplam = sorunlarListesi.size
+        val istatistikCozulen = sorunlarListesi.count { it.durum == 2 }
+        val istatistikSilinen = sorunlarListesi.count { it.silindi }
+        val aktifSorunlar = sorunlarListesi.filter { !it.silindi }
+
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Admin Paneli", style = MaterialTheme.typography.headlineMedium)
-                Button(onClick = { adminGirisiYapildi = false }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
+                Button(onClick = {
+                    val prefs = context.getSharedPreferences("AdminPrefs", android.content.Context.MODE_PRIVATE)
+                    prefs.edit().putBoolean("admin_loggedin", false).apply()
+                    adminGirisiYapildi = false
+                }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
                     Text("Çıkış")
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
+
+            // --- İstatistik Panosu ---
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD))) {
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Toplam", style = MaterialTheme.typography.labelMedium)
+                        Text("$istatistikToplam", style = MaterialTheme.typography.headlineSmall, color = Color.Blue)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Çözülen", style = MaterialTheme.typography.labelMedium)
+                        Text("$istatistikCozulen", style = MaterialTheme.typography.headlineSmall, color = Color(0xFF4CAF50))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Silinen", style = MaterialTheme.typography.labelMedium)
+                        Text("$istatistikSilinen", style = MaterialTheme.typography.headlineSmall, color = Color.Red)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
             LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(sorunlarListesi) { sorun ->
+                items(aktifSorunlar) { sorun ->
                     Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             if (sorun.fotografUrl.isNotEmpty()) {
@@ -330,6 +385,9 @@ fun IzmirHaritaEkrani() {
                                 Button(onClick = { durumuGuncelle(sorun.id, 2) }, enabled = sorun.durum != 2, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))) {
                                     Text("Çözüldü")
                                 }
+                                IconButton(onClick = { sorunuSil(sorun.id) }) {
+                                    Text("🗑️", style = MaterialTheme.typography.bodyLarge)
+                                }
                             }
                         }
                     }
@@ -345,7 +403,7 @@ fun IzmirHaritaEkrani() {
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
                 latLngBoundsForCameraTarget = karsiyakaBounds,
-                minZoomPreference = 12f
+                minZoomPreference = 14f
             ),
             onMapLongClick = { latLng ->
                 anlikLat = latLng.latitude
@@ -373,8 +431,9 @@ fun IzmirHaritaEkrani() {
                 }
             }
         ) {
-            // Haritada Sorunları Göster
-            sorunlarListesi.forEach { sorun ->
+            // Haritada Aktif Sorunları Göster
+            val aktifSorunlar = sorunlarListesi.filter { !it.silindi }
+            aktifSorunlar.forEach { sorun ->
                 val konum = LatLng(sorun.lat, sorun.lng)
 
                 // Karakter/Renk: Bekliyor (Kırmızı), İletildi (Sarı), Çözüldü (Yeşil)
@@ -429,7 +488,7 @@ fun IzmirHaritaEkrani() {
         }
 
         if (profilAcik) {
-            val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == androidId }
+            val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == androidId && !it.silindi }
             AlertDialog(
                 onDismissRequest = { profilAcik = false },
                 title = { Text("Bildirdiğim Sorunlar") },
@@ -508,6 +567,8 @@ fun IzmirHaritaEkrani() {
                         }
 
                         if (adminKullanici.toSHA256() == beklenenKullaniciHash && adminSifre.toSHA256() == beklenenSifreHash) {
+                            val prefs = context.getSharedPreferences("AdminPrefs", android.content.Context.MODE_PRIVATE)
+                            prefs.edit().putBoolean("admin_loggedin", true).apply()
                             adminGirisiYapildi = true
                             adminGirisEkraniAcik = false
                         } else {
