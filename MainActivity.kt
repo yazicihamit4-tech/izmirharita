@@ -58,7 +58,8 @@ data class SorunModel(
     val adres: String,
     val fotografUrl: String,
     val durum: Int, // 0: Bekliyor, 1: İletildi, 2: Çözüldü
-    val silindi: Boolean
+    val silindi: Boolean,
+    val adminMesaji: String
 )
 
 class MainActivity : ComponentActivity() {
@@ -83,8 +84,18 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+            // Ferah, doğa dostu Karşıyaka Teması
+            val karsiyakaColorScheme = lightColorScheme(
+                primary = Color(0xFF2E7D32), // Koyu Yeşil (Doğa)
+                onPrimary = Color.White,
+                secondary = Color(0xFF0288D1), // Mavi (Körfez)
+                onSecondary = Color.White,
+                background = Color(0xFFF1F8E9), // Çok Açık Yeşil (Ferah Arka Plan)
+                surface = Color.White
+            )
+
+            MaterialTheme(colorScheme = karsiyakaColorScheme) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     IzmirHaritaEkrani()
                 }
             }
@@ -135,6 +146,9 @@ fun IzmirHaritaEkrani() {
 
     // --- Profil Ekranı ---
     var profilAcik by remember { mutableStateOf(false) }
+
+    // --- Ekran Yönetimi (Lobi, Harita, Takip) ---
+    var aktifEkran by remember { mutableStateOf("LOBI") }
 
     // --- Admin Ekranı ---
     var adminGirisEkraniAcik by remember { mutableStateOf(false) }
@@ -197,6 +211,7 @@ fun IzmirHaritaEkrani() {
                     "fotografUrl" to photoUrl,
                     "durum" to 0,
                     "silindi" to false,
+                    "adminMesaji" to "",
                     "lat" to anlikLat,
                     "lng" to anlikLng,
                     "timestamp" to System.currentTimeMillis()
@@ -285,7 +300,8 @@ fun IzmirHaritaEkrani() {
                                 adres = doc.getString("adres") ?: "",
                                 fotografUrl = doc.getString("fotografUrl") ?: "",
                                 durum = doc.getLong("durum")?.toInt() ?: (if (doc.getBoolean("cozuldu") == true) 2 else 0),
-                                silindi = doc.getBoolean("silindi") ?: false
+                                silindi = doc.getBoolean("silindi") ?: false,
+                                adminMesaji = doc.getString("adminMesaji") ?: ""
                             )
                         )
                     }
@@ -314,6 +330,14 @@ fun IzmirHaritaEkrani() {
             .addOnFailureListener { e -> Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show() }
     }
 
+    // --- Admin Mesaj Güncelleme ---
+    fun mesajGuncelle(id: String, mesaj: String) {
+        val db = FirebaseFirestore.getInstance()
+        db.collection("sorunlar").document(id).update("adminMesaji", mesaj)
+            .addOnSuccessListener { Toast.makeText(context, "Mesaj gönderildi", Toast.LENGTH_SHORT).show() }
+            .addOnFailureListener { e -> Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show() }
+    }
+
     // --- Admin Sorun Silme (Soft Delete) ---
     fun sorunuSil(id: String) {
         val db = FirebaseFirestore.getInstance()
@@ -322,6 +346,50 @@ fun IzmirHaritaEkrani() {
             .addOnFailureListener { e -> Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show() }
     }
 
+    // --- LOBİ EKRANI ---
+    if (aktifEkran == "LOBI" && !adminGirisiYapildi) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("🌳", style = MaterialTheme.typography.displayLarge)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Karşıyaka Çözüm Merkezi",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "Kentimizi birlikte güzelleştiriyoruz.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.Gray,
+                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
+            )
+
+            Button(
+                onClick = { aktifEkran = "HARITA" },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("Sorun Bildir", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = { aktifEkran = "TAKIP" },
+                modifier = Modifier.fillMaxWidth().height(56.dp)
+            ) {
+                Text("Bildirimlerimi Takip Et", style = MaterialTheme.typography.titleMedium)
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = { adminGirisEkraniAcik = true }) {
+                Text("Yönetici Girişi", color = Color.LightGray)
+            }
+        }
+    }
+
+    // --- EKRAN YÖNLENDİRMELERİ ---
     if (adminGirisiYapildi) {
         val istatistikToplam = sorunlarListesi.size
         val istatistikCozulen = sorunlarListesi.count { it.durum == 2 }
@@ -389,6 +457,21 @@ fun IzmirHaritaEkrani() {
                                     Text("🗑️", style = MaterialTheme.typography.bodyLarge)
                                 }
                             }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Kullanıcıya Mesaj Gönder:", style = MaterialTheme.typography.labelLarge)
+                            var mesajMetni by remember { mutableStateOf(sorun.adminMesaji) }
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = mesajMetni,
+                                    onValueChange = { mesajMetni = it },
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                    placeholder = { Text("Açıklama veya çözüm notu yazın...") },
+                                    maxLines = 2
+                                )
+                                Button(onClick = { mesajGuncelle(sorun.id, mesajMetni) }) {
+                                    Text("Gönder")
+                                }
+                            }
                         }
                     }
                 }
@@ -397,6 +480,7 @@ fun IzmirHaritaEkrani() {
         return // Ana ekranı gösterme, sadece admin panelini göster
     }
 
+    if (aktifEkran == "HARITA" && !adminGirisiYapildi) {
     Box(modifier = Modifier.fillMaxSize()) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
@@ -526,64 +610,6 @@ fun IzmirHaritaEkrani() {
             )
         }
 
-        if (adminGirisEkraniAcik) {
-            var adminKullanici by remember { mutableStateOf("") }
-            var adminSifre by remember { mutableStateOf("") }
-            var hataMesaji by remember { mutableStateOf("") }
-
-            AlertDialog(
-                onDismissRequest = { adminGirisEkraniAcik = false },
-                title = { Text("Admin Girişi") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = adminKullanici,
-                            onValueChange = { adminKullanici = it },
-                            label = { Text("Kullanıcı Adı") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = adminSifre,
-                            onValueChange = { adminSifre = it },
-                            label = { Text("Şifre") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (hataMesaji.isNotEmpty()) {
-                            Text(text = hataMesaji, color = Color.Red, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = {
-                        // "yazhamit" SHA-256 Hash'i
-                        val beklenenKullaniciHash = "5596c93f77709e9c12fc4f8633c712221002652f66241e675c1046475497f426"
-                        // "715859" SHA-256 Hash'i
-                        val beklenenSifreHash = "6ad04b02e45051fc74fec6748bc60bf26fb30fb7a202d6719ebd138287d2def8"
-
-                        fun String.toSHA256(): String {
-                            val bytes = MessageDigest.getInstance("SHA-256").digest(this.toByteArray())
-                            return bytes.joinToString("") { "%02x".format(it) }
-                        }
-
-                        if (adminKullanici.toSHA256() == beklenenKullaniciHash && adminSifre.toSHA256() == beklenenSifreHash) {
-                            val prefs = context.getSharedPreferences("AdminPrefs", android.content.Context.MODE_PRIVATE)
-                            prefs.edit().putBoolean("admin_loggedin", true).apply()
-                            adminGirisiYapildi = true
-                            adminGirisEkraniAcik = false
-                        } else {
-                            hataMesaji = "Hatalı kullanıcı adı veya şifre"
-                        }
-                    }) {
-                        Text("Giriş")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { adminGirisEkraniAcik = false }) { Text("İptal") }
-                }
-            )
-        }
-
         if (showSheet) {
             ModalBottomSheet(onDismissRequest = { showSheet = false }, sheetState = sheetState) {
                 Column(
@@ -668,5 +694,144 @@ fun IzmirHaritaEkrani() {
                 }
             }
         }
+
+        // Harita Ekranı Geri Dön Butonu
+        Button(
+            onClick = { aktifEkran = "LOBI" },
+            modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+        ) {
+            Text("← Lobiye Dön")
+        }
+    } // End of HARITA
     }
+
+    // --- TAKİP EKRANI ---
+    if (aktifEkran == "TAKIP" && !adminGirisiYapildi) {
+        val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == androidId && !it.silindi }
+
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Button(
+                onClick = { aktifEkran = "LOBI" },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("← Geri Dön")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Bildirimlerim", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (benimSorunlarim.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Henüz bir sorun bildirmediniz.", color = Color.Gray, style = MaterialTheme.typography.titleMedium)
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    items(benimSorunlarim) { sorun ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(text = sorun.adres, style = MaterialTheme.typography.titleSmall, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(text = sorun.aciklama, style = MaterialTheme.typography.bodyLarge)
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                val (durumYazisi, durumRengi, icon) = when (sorun.durum) {
+                                    2 -> Triple("Çözüldü", Color(0xFF4CAF50), "✅")
+                                    1 -> Triple("İlgili Birime İletildi", Color(0xFFFFA000), "🟠")
+                                    else -> Triple("İnceleniyor (Bekliyor)", Color.Red, "🔴")
+                                }
+
+                                Surface(
+                                    color = durumRengi.copy(alpha = 0.1f),
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = icon, modifier = Modifier.padding(end = 8.dp))
+                                        Text(text = durumYazisi, color = durumRengi, style = MaterialTheme.typography.labelLarge)
+                                    }
+                                }
+
+                                if (sorun.adminMesaji.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                                        shape = MaterialTheme.shapes.medium,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text("Admin Yanıtı:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(sorun.adminMesaji, style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } // End of TAKIP
+
+    if (adminGirisEkraniAcik) {
+        var adminKullanici by remember { mutableStateOf("") }
+        var adminSifre by remember { mutableStateOf("") }
+        var hataMesaji by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { adminGirisEkraniAcik = false },
+            title = { Text("Admin Girişi") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = adminKullanici,
+                        onValueChange = { adminKullanici = it },
+                        label = { Text("Kullanıcı Adı") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = adminSifre,
+                        onValueChange = { adminSifre = it },
+                        label = { Text("Şifre") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (hataMesaji.isNotEmpty()) {
+                        Text(text = hataMesaji, color = Color.Red, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val beklenenKullaniciHash = "5596c93f77709e9c12fc4f8633c712221002652f66241e675c1046475497f426"
+                    val beklenenSifreHash = "6ad04b02e45051fc74fec6748bc60bf26fb30fb7a202d6719ebd138287d2def8"
+
+                    fun String.toSHA256(): String {
+                        val bytes = MessageDigest.getInstance("SHA-256").digest(this.toByteArray())
+                        return bytes.joinToString("") { "%02x".format(it) }
+                    }
+
+                    if (adminKullanici.toSHA256() == beklenenKullaniciHash && adminSifre.toSHA256() == beklenenSifreHash) {
+                        val prefs = context.getSharedPreferences("AdminPrefs", android.content.Context.MODE_PRIVATE)
+                        prefs.edit().putBoolean("admin_loggedin", true).apply()
+                        adminGirisiYapildi = true
+                        adminGirisEkraniAcik = false
+                    } else {
+                        hataMesaji = "Hatalı kullanıcı adı veya şifre"
+                    }
+                }) {
+                    Text("Giriş")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { adminGirisEkraniAcik = false }) { Text("İptal") }
+            }
+        )
+    }
+
 }
