@@ -48,6 +48,18 @@ import java.security.MessageDigest
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Warning
 
 data class SorunModel(
     val id: String,
@@ -348,43 +360,101 @@ fun IzmirHaritaEkrani() {
 
     // --- LOBİ EKRANI ---
     if (aktifEkran == "LOBI" && !adminGirisiYapildi) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color(0xFFE8F5E9), Color(0xFFC8E6C9), Color(0xFFA5D6A7)) // Soft yeşil doğa geçişi
+                    )
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            Text("🌳", style = MaterialTheme.typography.displayLarge)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Karşıyaka Çözüm Merkezi",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = "Kentimizi birlikte güzelleştiriyoruz.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.Gray,
-                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
-            )
-
-            Button(
-                onClick = { aktifEkran = "HARITA" },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                Text("Sorun Bildir", style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = { aktifEkran = "TAKIP" },
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Text("Bildirimlerimi Takip Et", style = MaterialTheme.typography.titleMedium)
-            }
+                // Büyük Estetik Slogan
+                Surface(
+                    shape = RoundedCornerShape(100.dp),
+                    color = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    shadowElevation = 4.dp
+                ) {
+                    Text("🏡 🌳 🤝", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.headlineMedium)
+                }
 
-            Spacer(modifier = Modifier.weight(1f))
-            TextButton(onClick = { adminGirisEkraniAcik = true }) {
-                Text("Yönetici Girişi", color = Color.LightGray)
+                Text(
+                    text = "Çözüme Ortak Oluyoruz",
+                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold),
+                    color = Color(0xFF1B5E20), // Çok Koyu Yeşil
+                    textAlign = TextAlign.Center
+                )
+
+                Text(
+                    text = "Kentimizi birlikte güzelleştiriyoruz.",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
+                    color = Color(0xFF388E3C),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 48.dp)
+                )
+
+                // 3D Görünümlü Sorun Bildir Butonu (Gradient + Shadow)
+                Button(
+                    onClick = { aktifEkran = "HARITA" },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047)),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 2.dp,
+                        hoveredElevation = 10.dp
+                    )
+                ) {
+                    Icon(imageVector = Icons.Default.LocationOn, contentDescription = "Konum İkonu", tint = Color.White, modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Sorun Bildir", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // 3D Görünümlü Bildirim Takip Butonu
+                Button(
+                    onClick = { aktifEkran = "TAKIP" },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 6.dp,
+                        pressedElevation = 2.dp
+                    )
+                ) {
+                    Icon(imageVector = Icons.Default.Info, contentDescription = "Liste İkonu", tint = Color(0xFF2E7D32), modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Bildirimlerimi Takip Et", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color(0xFF2E7D32))
+                }
+
+                Spacer(modifier = Modifier.height(64.dp))
+
+                // Zarif, ince admin girişi butonu
+                Surface(
+                    color = Color.Transparent,
+                    modifier = Modifier.clickable { adminGirisEkraniAcik = true }
+                ) {
+                    Text(
+                        text = "Yönetici Girişi",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color(0xFF558B2F),
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
             }
         }
     }
