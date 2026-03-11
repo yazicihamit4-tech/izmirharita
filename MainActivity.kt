@@ -43,6 +43,10 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.firebase.auth.GoogleAuthProvider
 import java.io.File
 import java.security.MessageDigest
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -80,17 +84,6 @@ class MainActivity : ComponentActivity() {
 
         try {
             FirebaseApp.initializeApp(this)
-            val auth = FirebaseAuth.getInstance()
-            if (auth.currentUser == null) {
-                auth.signInAnonymously()
-                    .addOnCompleteListener(this) { task ->
-                        if (!task.isSuccessful) {
-                            Log.w("FirebaseAuth", "Anonim giriş başarısız", task.exception)
-                        } else {
-                            Log.d("FirebaseAuth", "Anonim giriş başarılı: ${auth.currentUser?.uid}")
-                        }
-                    }
-            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -172,8 +165,17 @@ fun IzmirHaritaEkrani() {
     // --- Haritadaki Sorunlar ---
     var sorunlarListesi by remember { mutableStateOf<List<SorunModel>>(emptyList()) }
 
-    // --- Cihaz ID (Benzersiz Profil İçin) ---
-    val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "BilinmeyenKullanici"
+    // --- Kullanıcı Oturum Yönetimi ---
+    val auth = FirebaseAuth.getInstance()
+    var currentFirebaseUser by remember { mutableStateOf(auth.currentUser) }
+    // Dinleyici (Listener) ekleyerek oturum değişikliklerini anında yakala
+    DisposableEffect(Unit) {
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            currentFirebaseUser = firebaseAuth.currentUser
+        }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
 
     // --- Karşıyaka Sınırları ve Harita Ayarları ---
     val karsiyakaMerkez = LatLng(38.4550, 27.1140)
@@ -213,8 +215,9 @@ fun IzmirHaritaEkrani() {
                 }
 
                 // 2. Firestore'a veriyi kaydet (Formda bulunan anlık koordinatlar ve adres ile)
+                val uid = currentFirebaseUser?.uid ?: "BilinmeyenKullanici"
                 val sorunVerisi = hashMapOf(
-                    "kullaniciId" to androidId,
+                    "kullaniciId" to uid,
                     "adres" to bulunanAdres,
                     "ilce" to "Karşıyaka", // Sabit Karşıyaka (İsteğe bağlı silebiliriz)
                     "mahalle" to "",
@@ -358,6 +361,28 @@ fun IzmirHaritaEkrani() {
             .addOnFailureListener { e -> Toast.makeText(context, "Hata: ${e.message}", Toast.LENGTH_SHORT).show() }
     }
 
+    // --- GOOGLE GİRİŞ (SIGN IN) LAUNCHER ---
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)!!
+            val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+            auth.signInWithCredential(credential)
+                .addOnCompleteListener { authTask ->
+                    if (authTask.isSuccessful) {
+                        Toast.makeText(context, "Giriş Başarılı", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Kimlik doğrulama hatası", Toast.LENGTH_SHORT).show()
+                    }
+                }
+        } catch (e: ApiException) {
+            Log.w("GoogleSignIn", "Google ile giriş iptal edildi veya başarısız.", e)
+            Toast.makeText(context, "Google girişi iptal edildi.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // --- LOBİ EKRANI ---
     if (aktifEkran == "LOBI" && !adminGirisiYapildi) {
         Box(
@@ -402,8 +427,36 @@ fun IzmirHaritaEkrani() {
                     modifier = Modifier.padding(top = 8.dp, bottom = 48.dp)
                 )
 
-                // 3D Görünümlü Sorun Bildir Butonu (Gradient + Shadow)
-                Button(
+                if (currentFirebaseUser == null) {
+                    // KULLANICI GİRİŞ YAPMAMIŞSA GOOGLE BUTONU GÖSTER
+                    Button(
+                        onClick = {
+                            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                // Not: Web İstemci Kimliğini (Web Client ID) Firebase Console -> Authentication -> Sign-in method -> Google bölümünden almalısınız
+                                .requestIdToken("257126138676-e17fsk1b4081cbb46oefs92u40tndvms.apps.googleusercontent.com") // Geçici Örnek Web Client ID (Kendi projenizinkiyle değiştirin)
+                                .requestEmail()
+                                .build()
+                            val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                            googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(64.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 2.dp)
+                    ) {
+                        Text("Google ile Giriş Yap", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color.Black)
+                    }
+                } else {
+                    // KULLANICI GİRİŞ YAPMIŞSA NORMAL MENÜYÜ GÖSTER
+                    Text(
+                        text = "Hoşgeldin, ${currentFirebaseUser?.displayName ?: "Kullanıcı"}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color(0xFF2E7D32),
+                        modifier = Modifier.padding(bottom = 24.dp)
+                    )
+
+                    // 3D Görünümlü Sorun Bildir Butonu (Gradient + Shadow)
+                    Button(
                     onClick = { aktifEkran = "HARITA" },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -423,25 +476,31 @@ fun IzmirHaritaEkrani() {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 3D Görünümlü Bildirim Takip Butonu
-                Button(
-                    onClick = { aktifEkran = "TAKIP" },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 6.dp,
-                        pressedElevation = 2.dp
-                    )
-                ) {
-                    Icon(imageVector = Icons.Default.Info, contentDescription = "Liste İkonu", tint = Color(0xFF2E7D32), modifier = Modifier.size(28.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("Bildirimlerimi Takip Et", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color(0xFF2E7D32))
-                }
+                    // 3D Görünümlü Bildirim Takip Butonu
+                    Button(
+                        onClick = { aktifEkran = "TAKIP" },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 6.dp,
+                            pressedElevation = 2.dp
+                        )
+                    ) {
+                        Icon(imageVector = Icons.Default.Info, contentDescription = "Liste İkonu", tint = Color(0xFF2E7D32), modifier = Modifier.size(28.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Bildirimlerimi Takip Et", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color(0xFF2E7D32))
+                    }
 
-                Spacer(modifier = Modifier.height(64.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    TextButton(onClick = { auth.signOut() }) {
+                        Text("Çıkış Yap", color = Color.Red)
+                    }
+                } // End if logged in
+
+                Spacer(modifier = Modifier.height(48.dp))
 
                 // Zarif, ince admin girişi butonu
                 Surface(
@@ -642,7 +701,8 @@ fun IzmirHaritaEkrani() {
         }
 
         if (profilAcik) {
-            val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == androidId && !it.silindi }
+            val uid = currentFirebaseUser?.uid ?: ""
+            val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == uid && !it.silindi }
             AlertDialog(
                 onDismissRequest = { profilAcik = false },
                 title = { Text("Bildirdiğim Sorunlar") },
@@ -778,7 +838,8 @@ fun IzmirHaritaEkrani() {
 
     // --- TAKİP EKRANI ---
     if (aktifEkran == "TAKIP" && !adminGirisiYapildi) {
-        val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == androidId && !it.silindi }
+        val uid = currentFirebaseUser?.uid ?: ""
+        val benimSorunlarim = sorunlarListesi.filter { it.kullaniciId == uid && !it.silindi }
 
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Button(
