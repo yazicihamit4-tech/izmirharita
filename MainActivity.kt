@@ -89,13 +89,17 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            // Ferah, doğa dostu Karşıyaka Teması
+            // Karşıyaka Renkleri
+            val kskYesili = Color(0xFF008744)
+            val kskKirmizisi = Color(0xFFD71920)
+
+            // Ferah Karşıyaka Teması
             val karsiyakaColorScheme = lightColorScheme(
-                primary = Color(0xFF2E7D32), // Koyu Yeşil (Doğa)
+                primary = kskYesili,
                 onPrimary = Color.White,
-                secondary = Color(0xFF0288D1), // Mavi (Körfez)
+                secondary = kskKirmizisi,
                 onSecondary = Color.White,
-                background = Color(0xFFF1F8E9), // Çok Açık Yeşil (Ferah Arka Plan)
+                background = Color(0xFFF9FBE7), // Çok Çok Açık Yeşil (Ferah Arka Plan)
                 surface = Color.White
             )
 
@@ -384,13 +388,14 @@ fun IzmirHaritaEkrani() {
     }
 
     // --- LOBİ EKRANI ---
+    // --- LOBİ EKRANI ---
     if (aktifEkran == "LOBI" && !adminGirisiYapildi) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color(0xFFE8F5E9), Color(0xFFC8E6C9), Color(0xFFA5D6A7)) // Soft yeşil doğa geçişi
+                        colors = listOf(Color.White, Color(0xFFE8F5E9), Color(0xFFC8E6C9)) // Beyazdan açık yeşile ferah geçiş
                     )
                 ),
             contentAlignment = Alignment.Center
@@ -415,14 +420,14 @@ fun IzmirHaritaEkrani() {
                 Text(
                     text = "Çözüme Ortak Oluyoruz",
                     style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold),
-                    color = Color(0xFF1B5E20), // Çok Koyu Yeşil
+                    color = Color(0xFF008744), // KSK Yeşili
                     textAlign = TextAlign.Center
                 )
 
                 Text(
                     text = "Kentimizi birlikte güzelleştiriyoruz.",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
-                    color = Color(0xFF388E3C),
+                    color = Color.DarkGray,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp, bottom = 48.dp)
                 )
@@ -441,40 +446,40 @@ fun IzmirHaritaEkrani() {
                         },
                         modifier = Modifier.fillMaxWidth().height(64.dp),
                         shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD71920)), // KSK Kırmızısı
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 2.dp)
                     ) {
-                        Text("Google ile Giriş Yap", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color.Black)
+                        Text("Google ile Giriş Yap", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
                     }
                 } else {
                     // KULLANICI GİRİŞ YAPMIŞSA NORMAL MENÜYÜ GÖSTER
                     Text(
                         text = "Hoşgeldin, ${currentFirebaseUser?.displayName ?: "Kullanıcı"}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFF2E7D32),
+                        color = Color(0xFF008744), // KSK Yeşili
                         modifier = Modifier.padding(bottom = 24.dp)
                     )
 
                     // 3D Görünümlü Sorun Bildir Butonu (Gradient + Shadow)
                     Button(
-                    onClick = { aktifEkran = "HARITA" },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047)),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 2.dp,
-                        hoveredElevation = 10.dp
-                    )
-                ) {
-                    Icon(imageVector = Icons.Default.LocationOn, contentDescription = "Konum İkonu", tint = Color.White, modifier = Modifier.size(28.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("Sorun Bildir", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                }
+                        onClick = { aktifEkran = "HARITA" },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF008744)), // KSK Yeşili
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 8.dp,
+                            pressedElevation = 2.dp,
+                            hoveredElevation = 10.dp
+                        )
+                    ) {
+                        Icon(imageVector = Icons.Default.LocationOn, contentDescription = "Konum İkonu", tint = Color.White, modifier = Modifier.size(28.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Sorun Bildir", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                    }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
                     // 3D Görünümlü Bildirim Takip Butonu
                     Button(
@@ -489,9 +494,9 @@ fun IzmirHaritaEkrani() {
                             pressedElevation = 2.dp
                         )
                     ) {
-                        Icon(imageVector = Icons.Default.Info, contentDescription = "Liste İkonu", tint = Color(0xFF2E7D32), modifier = Modifier.size(28.dp))
+                        Icon(imageVector = Icons.Default.Info, contentDescription = "Liste İkonu", tint = Color(0xFF008744), modifier = Modifier.size(28.dp))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("Bildirimlerimi Takip Et", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color(0xFF2E7D32))
+                        Text("Bildirimlerimi Takip Et", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color(0xFF008744)) // KSK Yeşili
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -674,13 +679,15 @@ fun IzmirHaritaEkrani() {
                 }
             },
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).height(56.dp).fillMaxWidth(0.6f),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0055)),
+            shape = RoundedCornerShape(24.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD71920)), // KSK Kırmızısı
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
             enabled = !formAciliyor
         ) {
             if (formAciliyor) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
             } else {
-                Text("SORUN BİLDİR")
+                Text("SORUN BİLDİR", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
             }
         }
 
@@ -829,9 +836,10 @@ fun IzmirHaritaEkrani() {
         Button(
             onClick = { aktifEkran = "LOBI" },
             modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFFD71920)) // KSK Kırmızısı ok
         ) {
-            Text("← Lobiye Dön")
+            Text("← Lobiye Dön", fontWeight = FontWeight.Bold)
         }
     } // End of HARITA
     }
@@ -844,12 +852,12 @@ fun IzmirHaritaEkrani() {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Button(
                 onClick = { aktifEkran = "LOBI" },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF008744)) // KSK Yeşili
             ) {
                 Text("← Geri Dön")
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Bildirimlerim", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            Text("Bildirimlerim", style = MaterialTheme.typography.headlineMedium, color = Color(0xFF008744)) // KSK Yeşili
             Spacer(modifier = Modifier.height(16.dp))
 
             if (benimSorunlarim.isEmpty()) {
@@ -890,12 +898,12 @@ fun IzmirHaritaEkrani() {
                                 if (sorun.adminMesaji.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Surface(
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                                        color = Color(0xFF008744).copy(alpha = 0.05f),
                                         shape = MaterialTheme.shapes.medium,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(modifier = Modifier.padding(12.dp)) {
-                                            Text("Admin Yanıtı:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            Text("Admin Yanıtı:", style = MaterialTheme.typography.labelMedium, color = Color(0xFF008744))
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(sorun.adminMesaji, style = MaterialTheme.typography.bodyMedium)
                                         }
