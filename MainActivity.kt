@@ -43,6 +43,8 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import android.util.Log
 import androidx.core.content.FileProvider
+import android.hardware.camera2.CameraManager
+import android.content.Context
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -64,6 +66,11 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import com.google.android.gms.maps.model.BitmapDescriptor
 
 data class SorunModel(
     val id: String,
@@ -166,6 +173,78 @@ fun IzmirHaritaEkrani() {
         mutableStateOf(prefs.getBoolean("admin_loggedin", false))
     }
 
+    // --- Özel "35.5" Marker İkonu Oluşturucu ---
+    fun create355Marker(context: Context, status: Int): BitmapDescriptor {
+        val size = 120 // İkon boyutu
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Duruma göre renk seç
+        val color = when (status) {
+            2 -> android.graphics.Color.parseColor("#008744") // Çözüldü - KSK Yeşili
+            1 -> android.graphics.Color.parseColor("#FFA000") // İletildi - Turuncu
+            else -> android.graphics.Color.parseColor("#D71920") // Bekliyor - KSK Kırmızısı
+        }
+
+        // Zemin daire çizimi
+        val paintCircle = Paint().apply {
+            this.color = color
+            isAntiAlias = true
+            style = Paint.Style.FILL
+        }
+
+        // Beyaz çerçeve (Stroke)
+        val paintStroke = Paint().apply {
+            this.color = android.graphics.Color.WHITE
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = 6f
+        }
+
+        val rect = RectF(6f, 6f, size.toFloat() - 6f, size.toFloat() - 6f)
+        canvas.drawOval(rect, paintCircle)
+        canvas.drawOval(rect, paintStroke)
+
+        // "35.5" Yazısı
+        val paintText = Paint().apply {
+            this.color = android.graphics.Color.WHITE
+            isAntiAlias = true
+            textSize = 36f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
+        }
+
+        // Metni tam ortaya hizala
+        val xPos = canvas.width / 2f
+        val yPos = (canvas.height / 2f) - ((paintText.descent() + paintText.ascent()) / 2f)
+        canvas.drawText("35.5", xPos, yPos, paintText)
+
+        return BitmapDescriptorFactory.fromBitmap(bitmap)
+    }
+
+    // --- Fener (Sinyal) Animasyonu ---
+    fun sinyalCakFenerAnimasyonu() {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                    cameraManager.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                }
+                if (cameraId != null) {
+                    // İki kere hızlı flaş yanıp sönmesi
+                    for (i in 0..1) {
+                        cameraManager.setTorchMode(cameraId, true)
+                        kotlinx.coroutines.delay(150)
+                        cameraManager.setTorchMode(cameraId, false)
+                        kotlinx.coroutines.delay(150)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace() // Fener yoksa veya erişilemiyorsa sessizce geç
+            }
+        }
+    }
+
     // --- Haritadaki Sorunlar ---
     var sorunlarListesi by remember { mutableStateOf<List<SorunModel>>(emptyList()) }
 
@@ -241,7 +320,8 @@ fun IzmirHaritaEkrani() {
                 db.collection("sorunlar").add(sorunVerisi)
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Sorun başarıyla bildirildi!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Sinyal başarıyla çakıldı! 🔦", Toast.LENGTH_LONG).show()
+                    sinyalCakFenerAnimasyonu() // Flaş patlat!
                     showSheet = false
                     // Reset fields
                     yorum = ""
@@ -654,18 +734,19 @@ fun IzmirHaritaEkrani() {
             aktifSorunlar.forEach { sorun ->
                 val konum = LatLng(sorun.lat, sorun.lng)
 
-                // Karakter/Renk: Bekliyor (Kırmızı), İletildi (Sarı), Çözüldü (Yeşil)
-                val (iconColor, durumYazisi) = when (sorun.durum) {
-                    2 -> Pair(BitmapDescriptorFactory.HUE_GREEN, "✅ Çözüldü")
-                    1 -> Pair(BitmapDescriptorFactory.HUE_ORANGE, "🟠 İletildi")
-                    else -> Pair(BitmapDescriptorFactory.HUE_RED, "🔴 Bekliyor")
+                val durumYazisi = when (sorun.durum) {
+                    2 -> "✅ Çözüldü"
+                    1 -> "🟠 İletildi"
+                    else -> "🔴 Bekliyor"
                 }
+
+                val customIcon = remember(sorun.durum) { create355Marker(context, sorun.durum) }
 
                 Marker(
                     state = MarkerState(position = konum),
                     title = "Sorun: ${sorun.aciklama.take(20)}...",
                     snippet = "Durum: $durumYazisi\nAdres: ${sorun.adres}",
-                    icon = BitmapDescriptorFactory.defaultMarker(iconColor)
+                    icon = customIcon
                 )
             }
         }
@@ -822,10 +903,12 @@ fun IzmirHaritaEkrani() {
 
                     Button(
                         onClick = { sorunKaydet() },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF008744)), // KSK Yeşili
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 2.dp)
                     ) {
-                        Text("BİLDİRİMİ GÖNDER")
+                        Text("SİNYAL ÇAK 🔦", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
                     }
                     Spacer(modifier = Modifier.height(32.dp))
                 }
