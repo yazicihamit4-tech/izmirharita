@@ -66,12 +66,23 @@ dependencies {
     implementation(libs.maps.compose)
     implementation(libs.play.services.maps)
     implementation(libs.play.services.location)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // --- FIREBASE ---
     implementation(platform("com.google.firebase:firebase-bom:34.10.0"))
     implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-firestore")
+
+    // --- GOOGLE SIGN-IN ---
+    implementation("com.google.android.gms:play-services-auth:21.1.0")
+
+    // --- GÖRSELLER (COIL) ---
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
+    // --- KOTLIN COROUTINES PLAY SERVICES (Firebase await işlemleri için) ---
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
     // --- TEST VE DEBUG ---
     testImplementation(libs.junit)
